@@ -1,0 +1,24 @@
+# CLion / IntelliJ
+.idea/
+*.iml
+
+# CMake
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Build artifacts
+*.o
+*.obj
+*.exe
+*.out
+*.dll
+*.a
+*.lib
+
+# Ninja
+.ninja_deps
+.ninja_log
+build.ninja

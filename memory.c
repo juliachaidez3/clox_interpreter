@@ -1,0 +1,21 @@
+#include <stdlib.h>
+#include <stdio.h>
+
+#include "memory.h"
+
+void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
+  (void)oldSize; // unused for now, but kept for future GC/accounting work
+
+  if (newSize == 0) {
+    free(pointer);
+    return NULL;
+  }
+
+  void* result = realloc(pointer, newSize);
+  if (result == NULL) {
+    fprintf(stderr, "Out of memory.\n");
+    exit(1);
+  }
+
+  return result;
+}
