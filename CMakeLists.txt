@@ -5,9 +5,11 @@ set(CMAKE_C_STANDARD 99)
 
 add_executable(clox_interpreter
         main.c
-        chunk.c
-        debug.c
         memory.c
         value.c
+        chunk.c
+        debug.c
         vm.c
+        compiler.c
+        scanner.c
 )
