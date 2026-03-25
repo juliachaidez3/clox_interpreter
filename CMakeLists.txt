@@ -9,4 +9,5 @@ add_executable(clox_interpreter
         debug.c
         memory.c
         value.c
+        vm.c
 )
