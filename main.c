@@ -3,17 +3,18 @@
 #include "debug.h"
 
 int main(void) {
-  Chunk chunk;
-  initChunk(&chunk);
+    Chunk chunk;
+    initChunk(&chunk);
 
-  int constant = addConstant(&chunk, 1.2);
-  writeChunk(&chunk, OP_CONSTANT, 123);
-  writeChunk(&chunk, (uint8_t)constant, 123);
+    for (int i = 0; i < 256; i++) {
+        addConstant(&chunk, (double)i);
+    }
 
-  writeChunk(&chunk, OP_RETURN, 123);
+    writeConstant(&chunk, 999.9, 123);
+    writeChunk(&chunk, OP_RETURN, 123);
 
-  disassembleChunk(&chunk, "test chunk");
+    disassembleChunk(&chunk, "test chunk");
 
-  freeChunk(&chunk);
-  return 0;
+    freeChunk(&chunk);
+    return 0;
 }
