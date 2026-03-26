@@ -9,7 +9,7 @@ add_executable(clox_interpreter
         value.c
         chunk.c
         debug.c
-        vm.c
-        compiler.c
         scanner.c
+        compiler.c
+        vm.c
 )

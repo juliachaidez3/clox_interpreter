@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <string.h>
 
 #include "scanner.h"
@@ -9,7 +8,7 @@ typedef struct {
   int line;
 } Scanner;
 
-Scanner scanner;
+static Scanner scanner;
 
 static bool isAtEnd(void) {
   return *scanner.current == '\0';
@@ -47,7 +46,6 @@ static char advance(void) {
 static bool match(char expected) {
   if (isAtEnd()) return false;
   if (*scanner.current != expected) return false;
-
   scanner.current++;
   return true;
 }
@@ -94,18 +92,6 @@ static bool isDigit(char c) {
   return c >= '0' && c <= '9';
 }
 
-static Token number(void) {
-  while (isDigit(peek())) advance();
-
-  if (peek() == '.' && isDigit(peekNext())) {
-    advance();
-
-    while (isDigit(peek())) advance();
-  }
-
-  return makeToken(TOKEN_NUMBER);
-}
-
 static bool isAlpha(char c) {
   return (c >= 'a' && c <= 'z') ||
          (c >= 'A' && c <= 'Z') ||
@@ -122,6 +108,17 @@ static Token string(void) {
 
   advance();
   return makeToken(TOKEN_STRING);
+}
+
+static Token number(void) {
+  while (isDigit(peek())) advance();
+
+  if (peek() == '.' && isDigit(peekNext())) {
+    advance();
+    while (isDigit(peek())) advance();
+  }
+
+  return makeToken(TOKEN_NUMBER);
 }
 
 static TokenType checkKeyword(int start, int length,
@@ -206,8 +203,8 @@ Token scanToken(void) {
       return makeToken(match('=') ? TOKEN_LESS_EQUAL : TOKEN_LESS);
     case '>':
       return makeToken(match('=') ? TOKEN_GREATER_EQUAL : TOKEN_GREATER);
-
-    case '"': return string();
+    case '"':
+      return string();
   }
 
   return errorToken("Unexpected character.");
