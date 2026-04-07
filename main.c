@@ -1,11 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "common.h"
 #include "vm.h"
 
-static void repl(void) {
+static void repl() {
   char line[1024];
-
   for (;;) {
     printf("> ");
 
@@ -26,7 +26,7 @@ static char* readFile(const char* path) {
   }
 
   fseek(file, 0L, SEEK_END);
-  size_t fileSize = (size_t)ftell(file);
+  size_t fileSize = ftell(file);
   rewind(file);
 
   char* buffer = (char*)malloc(fileSize + 1);
@@ -42,7 +42,6 @@ static char* readFile(const char* path) {
   }
 
   buffer[bytesRead] = '\0';
-
   fclose(file);
   return buffer;
 }
