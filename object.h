@@ -17,6 +17,7 @@ struct ObjString {
     Obj obj;
     int length;
     char* chars;
+    bool ownsChars;
 };
 
 #define OBJ_TYPE(value)        (AS_OBJ(value)->type)
@@ -31,6 +32,7 @@ static inline bool isObjType(Value value, ObjType type) {
 
 ObjString* copyString(const char* chars, int length);
 ObjString* takeString(char* chars, int length);
+ObjString* constantString(const char* chars, int length);
 void printObject(Value value);
 
 #endif
