@@ -2,6 +2,7 @@
 #define clox_vm_h
 
 #include "chunk.h"
+#include "object.h"
 
 typedef enum {
     INTERPRET_OK,
@@ -16,6 +17,8 @@ typedef struct {
     Value* stack;
     int stackCapacity;
     Value* stackTop;
+
+    Obj* objects;
 } VM;
 
 void initVM();

@@ -1,10 +1,11 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "common.h"
 #include "compiler.h"
-#include "scanner.h"
 #include "chunk.h"
+#include "object.h"
+#include "scanner.h"
 
 typedef struct {
     Token current;
@@ -45,6 +46,7 @@ static Chunk* currentChunk() {
 static void errorAt(Token* token, const char* message) {
     if (parser.panicMode) return;
     parser.panicMode = true;
+
     fprintf(stderr, "[line %d] Error", token->line);
 
     if (token->type == TOKEN_EOF) {
@@ -100,16 +102,6 @@ static void emitReturn() {
     emitByte(OP_RETURN);
 }
 
-static uint8_t makeConstant(Value value) {
-    int constant = addConstant(currentChunk(), value);
-    if (constant > UINT8_MAX) {
-        error("Too many constants in one chunk.");
-        return 0;
-    }
-
-    return (uint8_t)constant;
-}
-
 static void emitConstant(Value value) {
     writeConstant(currentChunk(), value, parser.previous.line);
 }
@@ -125,6 +117,7 @@ static void binary(bool canAssign);
 static void grouping(bool canAssign);
 static void literal(bool canAssign);
 static void number(bool canAssign);
+static void string(bool canAssign);
 static void unary(bool canAssign);
 
 static void binary(bool canAssign) {
@@ -172,6 +165,12 @@ static void number(bool canAssign) {
     emitConstant(NUMBER_VAL(value));
 }
 
+static void string(bool canAssign) {
+    (void)canAssign;
+    emitConstant(OBJ_VAL(copyString(parser.previous.start + 1,
+                                    parser.previous.length - 2)));
+}
+
 static void unary(bool canAssign) {
     (void)canAssign;
     TokenType operatorType = parser.previous.type;
@@ -207,7 +206,7 @@ ParseRule rules[] = {
     [TOKEN_LESS]          = {NULL,     binary, PREC_COMPARISON},
     [TOKEN_LESS_EQUAL]    = {NULL,     binary, PREC_COMPARISON},
     [TOKEN_IDENTIFIER]    = {NULL,     NULL,   PREC_NONE},
-    [TOKEN_STRING]        = {NULL,     NULL,   PREC_NONE},
+    [TOKEN_STRING]        = {string,   NULL,   PREC_NONE},
     [TOKEN_NUMBER]        = {number,   NULL,   PREC_NONE},
     [TOKEN_AND]           = {NULL,     NULL,   PREC_NONE},
     [TOKEN_CLASS]         = {NULL,     NULL,   PREC_NONE},
