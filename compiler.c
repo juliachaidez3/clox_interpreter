@@ -167,8 +167,8 @@ static void number(bool canAssign) {
 
 static void string(bool canAssign) {
     (void)canAssign;
-    emitConstant(OBJ_VAL(copyString(parser.previous.start + 1,
-                                    parser.previous.length - 2)));
+    emitConstant(OBJ_VAL(constantString(parser.previous.start + 1,
+                                        parser.previous.length - 2)));
 }
 
 static void unary(bool canAssign) {
