@@ -55,8 +55,40 @@ static void runFile(const char* path) {
   if (result == INTERPRET_RUNTIME_ERROR) exit(70);
 }
 
+static void testTablePrimitiveKeys() {
+  Table table;
+  initTable(&table);
+
+  tableSet(&table, NUMBER_VAL(42), BOOL_VAL(true));
+  tableSet(&table, BOOL_VAL(false), NUMBER_VAL(123));
+  tableSet(&table, NIL_VAL, NUMBER_VAL(999));
+
+  Value value;
+
+  if (tableGet(&table, NUMBER_VAL(42), &value)) {
+    printf("42 -> ");
+    printValue(value);
+    printf("\n");
+  }
+
+  if (tableGet(&table, BOOL_VAL(false), &value)) {
+    printf("false -> ");
+    printValue(value);
+    printf("\n");
+  }
+
+  if (tableGet(&table, NIL_VAL, &value)) {
+    printf("nil -> ");
+    printValue(value);
+    printf("\n");
+  }
+
+  freeTable(&table);
+}
+
 int main(int argc, const char* argv[]) {
   initVM();
+  testTablePrimitiveKeys();
 
   if (argc == 1) {
     repl();
