@@ -22,11 +22,13 @@ void initVM() {
     vm.chunk = NULL;
     vm.ip = NULL;
     vm.objects = NULL;
+    initTable(&vm.strings);
 }
 
 void freeVM() {
-    FREE_ARRAY(Value, vm.stack, vm.stackCapacity);
+    freeTable(&vm.strings);
     freeObjects();
+    FREE_ARRAY(Value, vm.stack, vm.stackCapacity);
     vm.stack = NULL;
     vm.stackTop = NULL;
     vm.stackCapacity = 0;
