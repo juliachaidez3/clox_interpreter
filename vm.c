@@ -1,5 +1,5 @@
-#include <stdarg.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 
 #include "common.h"
@@ -16,35 +16,19 @@ static void resetStack() {
 }
 
 void initVM() {
-    vm.stackCapacity = 8;
-    vm.stack = ALLOCATE(Value, vm.stackCapacity);
-    vm.stackTop = vm.stack;
-    vm.chunk = NULL;
-    vm.ip = NULL;
+    resetStack();
     vm.objects = NULL;
-    initTable(&vm.strings);
     initTable(&vm.globals);
+    initTable(&vm.strings);
 }
 
 void freeVM() {
     freeTable(&vm.globals);
     freeTable(&vm.strings);
     freeObjects();
-    FREE_ARRAY(Value, vm.stack, vm.stackCapacity);
-    vm.stack = NULL;
-    vm.stackTop = NULL;
-    vm.stackCapacity = 0;
 }
 
 void push(Value value) {
-    int count = (int)(vm.stackTop - vm.stack);
-    if (count >= vm.stackCapacity) {
-        int oldCapacity = vm.stackCapacity;
-        vm.stackCapacity = GROW_CAPACITY(oldCapacity);
-        vm.stack = GROW_ARRAY(Value, vm.stack, oldCapacity, vm.stackCapacity);
-        vm.stackTop = vm.stack + count;
-    }
-
     *vm.stackTop = value;
     vm.stackTop++;
 }
@@ -58,51 +42,50 @@ static Value peek(int distance) {
     return vm.stackTop[-1 - distance];
 }
 
-static bool isFalsey(Value value) {
-    return IS_NIL(value) || (IS_BOOL(value) && !AS_BOOL(value));
-}
-
 static void runtimeError(const char* format, ...) {
     va_list args;
     va_start(args, format);
     vfprintf(stderr, format, args);
     va_end(args);
-    fputc('\n', stderr);
+    fputs("\n", stderr);
 
     size_t instruction = vm.ip - vm.chunk->code - 1;
-    int line = getLine(vm.chunk, (int)instruction);
-    fprintf(stderr, "[line %d] in script\n", line);
+    fprintf(stderr, "[line %d] in script\n", vm.chunk->lines[instruction]);
     resetStack();
 }
 
-static void concatenate() {
+static bool isFalsey(Value value) {
+    return IS_NIL(value) || (IS_BOOL(value) && !AS_BOOL(value));
+}
+
+static InterpretResult concatenate() {
     ObjString* b = AS_STRING(pop());
     ObjString* a = AS_STRING(pop());
 
     int length = a->length + b->length;
     char* chars = ALLOCATE(char, length + 1);
-
     memcpy(chars, a->chars, a->length);
     memcpy(chars + a->length, b->chars, b->length);
     chars[length] = '\0';
 
     ObjString* result = takeString(chars, length);
     push(OBJ_VAL(result));
+    return INTERPRET_OK;
 }
 
 #define READ_BYTE() (*vm.ip++)
 #define READ_CONSTANT() (vm.chunk->constants.values[READ_BYTE()])
 #define READ_STRING() AS_STRING(READ_CONSTANT())
 
-#define BINARY_OP(valueType, op)                  \
-    do {                                          \
+#define BINARY_OP(valueType, op) \
+    do { \
         if (!IS_NUMBER(peek(0)) || !IS_NUMBER(peek(1))) { \
-            runtimeError("Operands must be numbers.");     \
-            return INTERPRET_RUNTIME_ERROR;       \
-        }                                         \
-        double b = AS_NUMBER(pop());              \
-        double a = AS_NUMBER(pop());              \
-        push(valueType(a op b));                  \
+            runtimeError("Operands must be numbers."); \
+            return INTERPRET_RUNTIME_ERROR; \
+        } \
+        double b = AS_NUMBER(pop()); \
+        double a = AS_NUMBER(pop()); \
+        push(valueType(a op b)); \
     } while (false)
 
 static InterpretResult run() {
@@ -126,29 +109,22 @@ static InterpretResult run() {
                 break;
             }
 
-            case OP_CONSTANT_LONG: {
-                uint32_t index = (uint32_t)READ_BYTE();
-                index |= ((uint32_t)READ_BYTE() << 8);
-                index |= ((uint32_t)READ_BYTE() << 16);
-                push(vm.chunk->constants.values[index]);
+            case OP_NIL: push(NIL_VAL); break;
+            case OP_TRUE: push(BOOL_VAL(true)); break;
+            case OP_FALSE: push(BOOL_VAL(false)); break;
+            case OP_POP: pop(); break;
+
+            case OP_GET_LOCAL: {
+                uint8_t slot = READ_BYTE();
+                push(vm.stack[slot]);
                 break;
             }
 
-            case OP_NIL:
-                push(NIL_VAL);
+            case OP_SET_LOCAL: {
+                uint8_t slot = READ_BYTE();
+                vm.stack[slot] = peek(0);
                 break;
-
-            case OP_TRUE:
-                push(BOOL_VAL(true));
-                break;
-
-            case OP_FALSE:
-                push(BOOL_VAL(false));
-                break;
-
-            case OP_POP:
-                pop();
-                break;
+            }
 
             case OP_GET_GLOBAL: {
                 ObjString* name = READ_STRING();
@@ -201,7 +177,8 @@ static InterpretResult run() {
                     double a = AS_NUMBER(pop());
                     push(NUMBER_VAL(a + b));
                 } else {
-                    runtimeError("Operands must be two numbers or two strings.");
+                    runtimeError(
+                            "Operands must be two numbers or two strings.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
                 break;

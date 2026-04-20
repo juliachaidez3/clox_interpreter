@@ -16,17 +16,6 @@ static int constantInstruction(const char* name, Chunk* chunk, int offset) {
     return offset + 2;
 }
 
-static int constantLongInstruction(const char* name, Chunk* chunk, int offset) {
-    uint32_t constant = (uint32_t)chunk->code[offset + 1]
-                      | ((uint32_t)chunk->code[offset + 2] << 8)
-                      | ((uint32_t)chunk->code[offset + 3] << 16);
-
-    printf("%-16s %4u '", name, constant);
-    printValue(chunk->constants.values[constant]);
-    printf("'\n");
-    return offset + 4;
-}
-
 static int byteInstruction(const char* name, Chunk* chunk, int offset) {
     uint8_t slot = chunk->code[offset + 1];
     printf("%-16s %4d\n", name, slot);
@@ -43,19 +32,16 @@ void disassembleChunk(Chunk* chunk, const char* name) {
 
 int disassembleInstruction(Chunk* chunk, int offset) {
     printf("%04d ", offset);
-
-    if (offset > 0 && getLine(chunk, offset) == getLine(chunk, offset - 1)) {
+    if (offset > 0 && chunk->lines[offset] == chunk->lines[offset - 1]) {
         printf("   | ");
     } else {
-        printf("%4d ", getLine(chunk, offset));
+        printf("%4d ", chunk->lines[offset]);
     }
 
     uint8_t instruction = chunk->code[offset];
     switch (instruction) {
         case OP_CONSTANT:
             return constantInstruction("OP_CONSTANT", chunk, offset);
-        case OP_CONSTANT_LONG:
-            return constantLongInstruction("OP_CONSTANT_LONG", chunk, offset);
         case OP_NIL:
             return simpleInstruction("OP_NIL", offset);
         case OP_TRUE:
@@ -64,6 +50,10 @@ int disassembleInstruction(Chunk* chunk, int offset) {
             return simpleInstruction("OP_FALSE", offset);
         case OP_POP:
             return simpleInstruction("OP_POP", offset);
+        case OP_GET_LOCAL:
+            return byteInstruction("OP_GET_LOCAL", chunk, offset);
+        case OP_SET_LOCAL:
+            return byteInstruction("OP_SET_LOCAL", chunk, offset);
         case OP_GET_GLOBAL:
             return constantInstruction("OP_GET_GLOBAL", chunk, offset);
         case OP_DEFINE_GLOBAL:
