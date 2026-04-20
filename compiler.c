@@ -5,9 +5,9 @@
 #include "common.h"
 #include "compiler.h"
 #include "debug.h"
+#include "memory.h"
 #include "object.h"
 #include "scanner.h"
-#include "memory.h"
 #include "vm.h"
 
 #ifdef DEBUG_PRINT_CODE
@@ -46,12 +46,21 @@ typedef struct {
 typedef struct {
     Token name;
     int depth;
+    bool isMutable;
 } Local;
+
+typedef struct {
+    Token name;
+    bool isMutable;
+} GlobalBinding;
 
 typedef struct {
     Local locals[UINT8_COUNT];
     int localCount;
     int scopeDepth;
+
+    GlobalBinding globals[UINT8_COUNT];
+    int globalCount;
 } Compiler;
 
 Parser parser;
@@ -147,6 +156,7 @@ static void emitConstant(Value value) {
 static void initCompiler(Compiler* compiler) {
     compiler->localCount = 0;
     compiler->scopeDepth = 0;
+    compiler->globalCount = 0;
     current = compiler;
 }
 
@@ -183,6 +193,8 @@ static void parsePrecedence(Precedence precedence);
 static uint8_t identifierConstant(Token* name);
 static bool identifiersEqual(Token* a, Token* b);
 static int resolveLocal(Compiler* compiler, Token* name);
+static int resolveGlobal(Token* name);
+static void declareGlobal(Token name, bool isMutable);
 
 static void grouping(bool canAssign) {
     expression();
@@ -204,23 +216,40 @@ static void literal(bool canAssign) {
         case TOKEN_FALSE: emitByte(OP_FALSE); break;
         case TOKEN_NIL: emitByte(OP_NIL); break;
         case TOKEN_TRUE: emitByte(OP_TRUE); break;
-        default: return; // Unreachable.
+        default: return;
     }
+}
+
+static bool localIsMutable(int index) {
+    return current->locals[index].isMutable;
+}
+
+static bool globalIsMutable(Token* name) {
+    int index = resolveGlobal(name);
+    if (index == -1) return true;
+    return current->globals[index].isMutable;
 }
 
 static void namedVariable(Token name, bool canAssign) {
     uint8_t getOp, setOp;
     int arg = resolveLocal(current, &name);
+    bool isMutable = true;
+
     if (arg != -1) {
         getOp = OP_GET_LOCAL;
         setOp = OP_SET_LOCAL;
+        isMutable = localIsMutable(arg);
     } else {
         arg = identifierConstant(&name);
         getOp = OP_GET_GLOBAL;
         setOp = OP_SET_GLOBAL;
+        isMutable = globalIsMutable(&name);
     }
 
     if (canAssign && match(TOKEN_EQUAL)) {
+        if (!isMutable) {
+            error("Can't assign to an immutable variable.");
+        }
         expression();
         emitBytes(setOp, (uint8_t)arg);
     } else {
@@ -240,7 +269,7 @@ static void unary(bool canAssign) {
     switch (operatorType) {
         case TOKEN_BANG: emitByte(OP_NOT); break;
         case TOKEN_MINUS: emitByte(OP_NEGATE); break;
-        default: return; // Unreachable.
+        default: return;
     }
 }
 
@@ -260,7 +289,7 @@ static void binary(bool canAssign) {
         case TOKEN_MINUS:         emitByte(OP_SUBTRACT); break;
         case TOKEN_STAR:          emitByte(OP_MULTIPLY); break;
         case TOKEN_SLASH:         emitByte(OP_DIVIDE); break;
-        default: return; // Unreachable.
+        default: return;
     }
 }
 
@@ -302,6 +331,7 @@ ParseRule rules[] = {
     [TOKEN_THIS]          = {NULL,     NULL,   PREC_NONE},
     [TOKEN_TRUE]          = {literal,  NULL,   PREC_NONE},
     [TOKEN_VAR]           = {NULL,     NULL,   PREC_NONE},
+    [TOKEN_VAL]           = {NULL,     NULL,   PREC_NONE},
     [TOKEN_WHILE]         = {NULL,     NULL,   PREC_NONE},
     [TOKEN_ERROR]         = {NULL,     NULL,   PREC_NONE},
     [TOKEN_EOF]           = {NULL,     NULL,   PREC_NONE},
@@ -356,7 +386,33 @@ static int resolveLocal(Compiler* compiler, Token* name) {
     return -1;
 }
 
-static void addLocal(Token name) {
+static int resolveGlobal(Token* name) {
+    for (int i = current->globalCount - 1; i >= 0; i--) {
+        if (identifiersEqual(name, &current->globals[i].name)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void declareGlobal(Token name, bool isMutable) {
+    int existing = resolveGlobal(&name);
+    if (existing != -1) {
+        current->globals[existing].isMutable = isMutable;
+        return;
+    }
+
+    if (current->globalCount == UINT8_COUNT) {
+        error("Too many global variables.");
+        return;
+    }
+
+    current->globals[current->globalCount].name = name;
+    current->globals[current->globalCount].isMutable = isMutable;
+    current->globalCount++;
+}
+
+static void addLocal(Token name, bool isMutable) {
     if (current->localCount == UINT8_COUNT) {
         error("Too many local variables in function.");
         return;
@@ -365,9 +421,10 @@ static void addLocal(Token name) {
     Local* local = &current->locals[current->localCount++];
     local->name = name;
     local->depth = -1;
+    local->isMutable = isMutable;
 }
 
-static void declareVariable() {
+static void declareVariable(bool isMutable) {
     if (current->scopeDepth == 0) return;
 
     Token* name = &parser.previous;
@@ -382,15 +439,18 @@ static void declareVariable() {
         }
     }
 
-    addLocal(*name);
+    addLocal(*name, isMutable);
 }
 
-static uint8_t parseVariable(const char* errorMessage) {
+static uint8_t parseVariable(const char* errorMessage, bool isMutable) {
     consume(TOKEN_IDENTIFIER, errorMessage);
 
-    declareVariable();
-    if (current->scopeDepth > 0) return 0;
+    if (current->scopeDepth > 0) {
+        declareVariable(isMutable);
+        return 0;
+    }
 
+    declareGlobal(parser.previous, isMutable);
     return identifierConstant(&parser.previous);
 }
 
@@ -433,7 +493,20 @@ static void expressionStatement() {
 }
 
 static void varDeclaration() {
-    uint8_t global = parseVariable("Expect variable name.");
+    uint8_t global = parseVariable("Expect variable name.", true);
+
+    if (match(TOKEN_EQUAL)) {
+        expression();
+    } else {
+        emitByte(OP_NIL);
+    }
+    consume(TOKEN_SEMICOLON, "Expect ';' after variable declaration.");
+
+    defineVariable(global);
+}
+
+static void valDeclaration() {
+    uint8_t global = parseVariable("Expect variable name.", false);
 
     if (match(TOKEN_EQUAL)) {
         expression();
@@ -455,6 +528,7 @@ static void synchronize() {
             case TOKEN_CLASS:
             case TOKEN_FUN:
             case TOKEN_VAR:
+            case TOKEN_VAL:
             case TOKEN_FOR:
             case TOKEN_IF:
             case TOKEN_WHILE:
@@ -463,7 +537,7 @@ static void synchronize() {
                 return;
 
             default:
-                ; // Do nothing.
+                ;
         }
 
         advance();
@@ -485,6 +559,8 @@ static void statement() {
 static void declaration() {
     if (match(TOKEN_VAR)) {
         varDeclaration();
+    } else if (match(TOKEN_VAL)) {
+        valDeclaration();
     } else {
         statement();
     }
