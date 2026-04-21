@@ -326,6 +326,7 @@ ParseRule rules[] = {
     [TOKEN_SEMICOLON]     = {NULL,     NULL,   PREC_NONE},
     [TOKEN_SLASH]         = {NULL,     binary, PREC_FACTOR},
     [TOKEN_STAR]          = {NULL,     binary, PREC_FACTOR},
+    [TOKEN_COLON]         = {NULL,     NULL,   PREC_NONE},
     [TOKEN_BANG]          = {unary,    NULL,   PREC_NONE},
     [TOKEN_BANG_EQUAL]    = {NULL,     binary, PREC_EQUALITY},
     [TOKEN_EQUAL]         = {NULL,     NULL,   PREC_NONE},
@@ -338,7 +339,9 @@ ParseRule rules[] = {
     [TOKEN_STRING]        = {string,   NULL,   PREC_NONE},
     [TOKEN_NUMBER]        = {number,   NULL,   PREC_NONE},
     [TOKEN_AND]           = {NULL,     and_,   PREC_AND},
+    [TOKEN_CASE]          = {NULL,     NULL,   PREC_NONE},
     [TOKEN_CLASS]         = {NULL,     NULL,   PREC_NONE},
+    [TOKEN_DEFAULT]       = {NULL,     NULL,   PREC_NONE},
     [TOKEN_ELSE]          = {NULL,     NULL,   PREC_NONE},
     [TOKEN_FALSE]         = {literal,  NULL,   PREC_NONE},
     [TOKEN_FOR]           = {NULL,     NULL,   PREC_NONE},
@@ -349,6 +352,7 @@ ParseRule rules[] = {
     [TOKEN_PRINT]         = {NULL,     NULL,   PREC_NONE},
     [TOKEN_RETURN]        = {NULL,     NULL,   PREC_NONE},
     [TOKEN_SUPER]         = {NULL,     NULL,   PREC_NONE},
+    [TOKEN_SWITCH]        = {NULL,     NULL,   PREC_NONE},
     [TOKEN_THIS]          = {NULL,     NULL,   PREC_NONE},
     [TOKEN_TRUE]          = {literal,  NULL,   PREC_NONE},
     [TOKEN_VAR]           = {NULL,     NULL,   PREC_NONE},
@@ -488,6 +492,85 @@ static void ifStatement() {
     patchJump(elseJump);
 }
 
+static void switchStatement() {
+    consume(TOKEN_LEFT_PAREN, "Expect '(' after 'switch'.");
+    expression();
+    consume(TOKEN_RIGHT_PAREN, "Expect ')' after switch value.");
+
+    beginScope();
+
+    Token syntheticName;
+    syntheticName.start = "";
+    syntheticName.length = 0;
+    syntheticName.line = parser.previous.line;
+
+    addLocal(syntheticName);
+    markInitialized();
+
+    consume(TOKEN_LEFT_BRACE, "Expect '{' before switch cases.");
+
+    int endJumps[UINT8_COUNT];
+    int endJumpCount = 0;
+    bool seenDefault = false;
+
+    while (!check(TOKEN_RIGHT_BRACE) && !check(TOKEN_EOF)) {
+        if (match(TOKEN_CASE)) {
+            if (seenDefault) {
+                error("Can't have 'case' after 'default'.");
+            }
+
+            emitBytes(OP_GET_LOCAL, 0);
+            expression();
+            consume(TOKEN_COLON, "Expect ':' after case value.");
+            emitByte(OP_EQUAL);
+
+            int caseSkip = emitJump(OP_JUMP_IF_FALSE);
+            emitByte(OP_POP);
+
+            while (!check(TOKEN_CASE) &&
+                   !check(TOKEN_DEFAULT) &&
+                   !check(TOKEN_RIGHT_BRACE) &&
+                   !check(TOKEN_EOF)) {
+                statement();
+            }
+
+            if (endJumpCount == UINT8_COUNT) {
+                error("Too many switch cases.");
+            } else {
+                endJumps[endJumpCount++] = emitJump(OP_JUMP);
+            }
+
+            patchJump(caseSkip);
+            emitByte(OP_POP);
+        } else if (match(TOKEN_DEFAULT)) {
+            if (seenDefault) {
+                error("Already have a default case.");
+            }
+            seenDefault = true;
+
+            consume(TOKEN_COLON, "Expect ':' after default.");
+
+            while (!check(TOKEN_CASE) &&
+                   !check(TOKEN_DEFAULT) &&
+                   !check(TOKEN_RIGHT_BRACE) &&
+                   !check(TOKEN_EOF)) {
+                statement();
+            }
+        } else {
+            error("Expect 'case' or 'default' in switch.");
+            advance();
+        }
+    }
+
+    consume(TOKEN_RIGHT_BRACE, "Expect '}' after switch.");
+
+    for (int i = 0; i < endJumpCount; i++) {
+        patchJump(endJumps[i]);
+    }
+
+    endScope();
+}
+
 static void whileStatement() {
     int loopStart = currentChunk()->count;
 
@@ -581,11 +664,14 @@ static void synchronize() {
         if (parser.previous.type == TOKEN_SEMICOLON) return;
 
         switch (parser.current.type) {
+            case TOKEN_CASE:
             case TOKEN_CLASS:
+            case TOKEN_DEFAULT:
             case TOKEN_FUN:
             case TOKEN_VAR:
             case TOKEN_FOR:
             case TOKEN_IF:
+            case TOKEN_SWITCH:
             case TOKEN_WHILE:
             case TOKEN_PRINT:
             case TOKEN_RETURN:
@@ -606,6 +692,8 @@ static void statement() {
         forStatement();
     } else if (match(TOKEN_IF)) {
         ifStatement();
+    } else if (match(TOKEN_SWITCH)) {
+        switchStatement();
     } else if (match(TOKEN_WHILE)) {
         whileStatement();
     } else if (match(TOKEN_LEFT_BRACE)) {
