@@ -6,5 +6,6 @@
 #include <stdint.h>
 
 #define UINT8_COUNT (UINT8_MAX + 1)
+#define LOCAL_MAX 65536
 
 #endif
