@@ -5,9 +5,9 @@
 #include "common.h"
 #include "compiler.h"
 #include "debug.h"
+#include "memory.h"
 #include "object.h"
 #include "scanner.h"
-#include "memory.h"
 #include "vm.h"
 
 #ifdef DEBUG_PRINT_CODE
@@ -49,7 +49,7 @@ typedef struct {
 } Local;
 
 typedef struct {
-    Local locals[UINT8_COUNT];
+    Local locals[LOCAL_MAX];
     int localCount;
     int scopeDepth;
 } Compiler;
@@ -126,6 +126,11 @@ static void emitBytes(uint8_t byte1, uint8_t byte2) {
     emitByte(byte2);
 }
 
+static void emitShort(uint16_t value) {
+    emitByte((uint8_t)((value >> 8) & 0xff));
+    emitByte((uint8_t)(value & 0xff));
+}
+
 static void emitReturn() {
     emitByte(OP_RETURN);
 }
@@ -184,6 +189,15 @@ static uint8_t identifierConstant(Token* name);
 static bool identifiersEqual(Token* a, Token* b);
 static int resolveLocal(Compiler* compiler, Token* name);
 
+static void emitVariableOp(uint8_t shortOp, uint8_t longOp, int arg) {
+    if (arg <= UINT8_MAX) {
+        emitBytes(shortOp, (uint8_t)arg);
+    } else {
+        emitByte(longOp);
+        emitShort((uint16_t)arg);
+    }
+}
+
 static void grouping(bool canAssign) {
     expression();
     consume(TOKEN_RIGHT_PAREN, "Expect ')' after expression.");
@@ -204,27 +218,29 @@ static void literal(bool canAssign) {
         case TOKEN_FALSE: emitByte(OP_FALSE); break;
         case TOKEN_NIL: emitByte(OP_NIL); break;
         case TOKEN_TRUE: emitByte(OP_TRUE); break;
-        default: return; // Unreachable.
+        default: return;
     }
 }
 
 static void namedVariable(Token name, bool canAssign) {
-    uint8_t getOp, setOp;
     int arg = resolveLocal(current, &name);
-    if (arg != -1) {
-        getOp = OP_GET_LOCAL;
-        setOp = OP_SET_LOCAL;
-    } else {
-        arg = identifierConstant(&name);
-        getOp = OP_GET_GLOBAL;
-        setOp = OP_SET_GLOBAL;
-    }
 
-    if (canAssign && match(TOKEN_EQUAL)) {
-        expression();
-        emitBytes(setOp, (uint8_t)arg);
+    if (arg != -1) {
+        if (canAssign && match(TOKEN_EQUAL)) {
+            expression();
+            emitVariableOp(OP_SET_LOCAL, OP_SET_LOCAL_LONG, arg);
+        } else {
+            emitVariableOp(OP_GET_LOCAL, OP_GET_LOCAL_LONG, arg);
+        }
     } else {
-        emitBytes(getOp, (uint8_t)arg);
+        uint8_t global = identifierConstant(&name);
+
+        if (canAssign && match(TOKEN_EQUAL)) {
+            expression();
+            emitBytes(OP_SET_GLOBAL, global);
+        } else {
+            emitBytes(OP_GET_GLOBAL, global);
+        }
     }
 }
 
@@ -240,7 +256,7 @@ static void unary(bool canAssign) {
     switch (operatorType) {
         case TOKEN_BANG: emitByte(OP_NOT); break;
         case TOKEN_MINUS: emitByte(OP_NEGATE); break;
-        default: return; // Unreachable.
+        default: return;
     }
 }
 
@@ -260,7 +276,7 @@ static void binary(bool canAssign) {
         case TOKEN_MINUS:         emitByte(OP_SUBTRACT); break;
         case TOKEN_STAR:          emitByte(OP_MULTIPLY); break;
         case TOKEN_SLASH:         emitByte(OP_DIVIDE); break;
-        default: return; // Unreachable.
+        default: return;
     }
 }
 
@@ -357,7 +373,7 @@ static int resolveLocal(Compiler* compiler, Token* name) {
 }
 
 static void addLocal(Token name) {
-    if (current->localCount == UINT8_COUNT) {
+    if (current->localCount == LOCAL_MAX) {
         error("Too many local variables in function.");
         return;
     }
@@ -463,7 +479,7 @@ static void synchronize() {
                 return;
 
             default:
-                ; // Do nothing.
+                ;
         }
 
         advance();
@@ -492,9 +508,12 @@ static void declaration() {
     if (parser.panicMode) synchronize();
 }
 
+static Compiler compiler;
+
+static Compiler compiler;
+
 bool compile(const char* source, Chunk* chunk) {
     initScanner(source);
-    Compiler compiler;
     initCompiler(&compiler);
 
     compilingChunk = chunk;
