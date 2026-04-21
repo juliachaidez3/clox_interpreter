@@ -208,6 +208,8 @@ static void statement();
 static void declaration();
 static void varDeclaration();
 static void expressionStatement();
+static void expressionOrTimesStatement();
+static void timesStatement();
 static ParseRule* getRule(TokenType type);
 static void parsePrecedence(Precedence precedence);
 static uint8_t identifierConstant(Token* name);
@@ -350,6 +352,7 @@ ParseRule rules[] = {
     [TOKEN_RETURN]        = {NULL,     NULL,   PREC_NONE},
     [TOKEN_SUPER]         = {NULL,     NULL,   PREC_NONE},
     [TOKEN_THIS]          = {NULL,     NULL,   PREC_NONE},
+    [TOKEN_TIMES]         = {NULL,     NULL,   PREC_NONE},
     [TOKEN_TRUE]          = {literal,  NULL,   PREC_NONE},
     [TOKEN_VAR]           = {NULL,     NULL,   PREC_NONE},
     [TOKEN_WHILE]         = {NULL,     NULL,   PREC_NONE},
@@ -549,6 +552,48 @@ static void forStatement() {
     endScope();
 }
 
+static void timesStatement() {
+    beginScope();
+
+    Token syntheticName;
+    syntheticName.start = "";
+    syntheticName.length = 0;
+    syntheticName.line = parser.previous.line;
+
+    addLocal(syntheticName);   // count
+    markInitialized();
+    int countSlot = current->localCount - 1;
+
+    emitConstant(NUMBER_VAL(0));
+    addLocal(syntheticName);   // counter
+    markInitialized();
+    int counterSlot = current->localCount - 1;
+
+    int loopStart = currentChunk()->count;
+
+    emitBytes(OP_GET_LOCAL, (uint8_t)counterSlot);
+    emitBytes(OP_GET_LOCAL, (uint8_t)countSlot);
+    emitByte(OP_LESS);
+
+    int exitJump = emitJump(OP_JUMP_IF_FALSE);
+    emitByte(OP_POP);
+
+    statement();
+
+    emitBytes(OP_GET_LOCAL, (uint8_t)counterSlot);
+    emitConstant(NUMBER_VAL(1));
+    emitByte(OP_ADD);
+    emitBytes(OP_SET_LOCAL, (uint8_t)counterSlot);
+    emitByte(OP_POP);
+
+    emitLoop(loopStart);
+
+    patchJump(exitJump);
+    emitByte(OP_POP);
+
+    endScope();
+}
+
 static void printStatement() {
     expression();
     consume(TOKEN_SEMICOLON, "Expect ';' after value.");
@@ -559,6 +604,17 @@ static void expressionStatement() {
     expression();
     consume(TOKEN_SEMICOLON, "Expect ';' after expression.");
     emitByte(OP_POP);
+}
+
+static void expressionOrTimesStatement() {
+    expression();
+
+    if (match(TOKEN_TIMES)) {
+        timesStatement();
+    } else {
+        consume(TOKEN_SEMICOLON, "Expect ';' after expression.");
+        emitByte(OP_POP);
+    }
 }
 
 static void varDeclaration() {
@@ -586,9 +642,10 @@ static void synchronize() {
             case TOKEN_VAR:
             case TOKEN_FOR:
             case TOKEN_IF:
-            case TOKEN_WHILE:
             case TOKEN_PRINT:
             case TOKEN_RETURN:
+            case TOKEN_TIMES:
+            case TOKEN_WHILE:
                 return;
 
             default:
@@ -613,7 +670,7 @@ static void statement() {
         block();
         endScope();
     } else {
-        expressionStatement();
+        expressionOrTimesStatement();
     }
 }
 
