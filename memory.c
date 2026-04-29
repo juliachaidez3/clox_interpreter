@@ -4,6 +4,17 @@
 #include "object.h"
 #include "vm.h"
 
+void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
+    if (newSize == 0) {
+        free(pointer);
+        return NULL;
+    }
+
+    void* result = realloc(pointer, newSize);
+    if (result == NULL) exit(1);
+    return result;
+}
+
 static void freeObject(Obj* object) {
     switch (object->type) {
         case OBJ_STRING: {
@@ -12,6 +23,17 @@ static void freeObject(Obj* object) {
             FREE(ObjString, object);
             break;
         }
+
+        case OBJ_FUNCTION: {
+            ObjFunction* function = (ObjFunction*)object;
+            freeChunk(&function->chunk);
+            FREE(ObjFunction, object);
+            break;
+        }
+
+        case OBJ_NATIVE:
+            FREE(ObjNative, object);
+            break;
     }
 }
 
@@ -22,17 +44,4 @@ void freeObjects() {
         freeObject(object);
         object = next;
     }
-}
-
-void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
-    (void)oldSize;
-
-    if (newSize == 0) {
-        free(pointer);
-        return NULL;
-    }
-
-    void* result = realloc(pointer, newSize);
-    if (result == NULL) exit(1);
-    return result;
 }
