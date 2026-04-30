@@ -633,9 +633,28 @@ static void forStatement() {
     beginScope();
     consume(TOKEN_LEFT_PAREN, "Expect '(' after 'for'.");
 
+    bool hasLoopVariable = false;
+    Token loopVariableName;
+    int loopVariableSlot = -1;
+
     if (match(TOKEN_SEMICOLON)) {
+        // No initializer.
     } else if (match(TOKEN_VAR)) {
-        varDeclaration();
+        uint8_t global = parseVariable("Expect variable name.");
+
+        // Because the whole for loop is already inside a scope, a var declared
+        // here is always a local loop variable.
+        hasLoopVariable = true;
+        loopVariableName = parser.previous;
+        loopVariableSlot = current->localCount - 1;
+
+        if (match(TOKEN_EQUAL)) {
+            expression();
+        } else {
+            emitByte(OP_NIL);
+        }
+        consume(TOKEN_SEMICOLON, "Expect ';' after loop variable declaration.");
+        defineVariable(global);
     } else {
         expressionStatement();
     }
@@ -662,7 +681,32 @@ static void forStatement() {
         patchJump(bodyJump);
     }
 
-    statement();
+    if (hasLoopVariable) {
+        // Create a fresh scope for this iteration.
+        beginScope();
+
+        // Copy the current loop-control variable into a fresh variable with
+        // the same name so closures in the body capture this iteration's value.
+        emitBytes(OP_GET_LOCAL, (uint8_t)loopVariableSlot);
+        addLocal(loopVariableName);
+        markInitialized();
+
+        int iterationSlot = current->localCount - 1;
+
+        // Compile the actual loop body using the fresh per-iteration variable.
+        statement();
+
+        // Copy the possibly updated iteration variable back into the real
+        // loop-control variable so the increment clause sees any body mutation.
+        emitBytes(OP_GET_LOCAL, (uint8_t)iterationSlot);
+        emitBytes(OP_SET_LOCAL, (uint8_t)loopVariableSlot);
+        emitByte(OP_POP);
+
+        endScope();
+    } else {
+        statement();
+    }
+
     emitLoop(loopStart);
 
     if (exitJump != -1) {
