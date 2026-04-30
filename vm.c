@@ -10,10 +10,33 @@
 #include "object.h"
 #include "vm.h"
 
+#include <math.h>
+#include <stdio.h>
+
 VM vm;
 
 static Value clockNative(int argCount, Value* args) {
     return NUMBER_VAL((double)clock() / CLOCKS_PER_SEC);
+}
+
+static Value sqrtNative(int argCount, Value* args) {
+    return NUMBER_VAL(sqrt(AS_NUMBER(args[0])));
+}
+
+static Value inputNative(int argCount, Value* args) {
+    char buffer[1024];
+
+    if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
+        return NIL_VAL;
+    }
+
+    int length = (int)strlen(buffer);
+    if (length > 0 && buffer[length - 1] == '\n') {
+        buffer[length - 1] = '\0';
+        length--;
+    }
+
+    return OBJ_VAL(copyString(buffer, length));
 }
 
 static void resetStack() {
@@ -59,6 +82,8 @@ void initVM() {
     initTable(&vm.strings);
 
     defineNative("clock", clockNative);
+    defineNative("sqrt", sqrtNative);
+    defineNative("input", inputNative);
 }
 
 void freeVM() {
