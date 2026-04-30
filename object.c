@@ -43,9 +43,10 @@ ObjFunction* newFunction() {
     return function;
 }
 
-ObjNative* newNative(NativeFn function) {
+ObjNative* newNative(NativeFn function, int arity) {
     ObjNative* native = (ObjNative*)allocateObject(sizeof(ObjNative), OBJ_NATIVE);
     native->function = function;
+    native->arity = arity;
     return native;
 }
 
