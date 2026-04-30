@@ -38,6 +38,7 @@ static ObjString* allocateString(char* chars, int length, uint32_t hash) {
 ObjFunction* newFunction() {
     ObjFunction* function = (ObjFunction*)allocateObject(sizeof(ObjFunction), OBJ_FUNCTION);
     function->arity = 0;
+    function->upvalueCount = 0;
     function->name = NULL;
     initChunk(&function->chunk);
     return function;
@@ -47,6 +48,27 @@ ObjNative* newNative(NativeFn function) {
     ObjNative* native = (ObjNative*)allocateObject(sizeof(ObjNative), OBJ_NATIVE);
     native->function = function;
     return native;
+}
+
+ObjClosure* newClosure(ObjFunction* function) {
+    ObjUpvalue** upvalues = ALLOCATE(ObjUpvalue*, function->upvalueCount);
+    for (int i = 0; i < function->upvalueCount; i++) {
+        upvalues[i] = NULL;
+    }
+
+    ObjClosure* closure = (ObjClosure*)allocateObject(sizeof(ObjClosure), OBJ_CLOSURE);
+    closure->function = function;
+    closure->upvalues = upvalues;
+    closure->upvalueCount = function->upvalueCount;
+    return closure;
+}
+
+ObjUpvalue* newUpvalue(Value* slot) {
+    ObjUpvalue* upvalue = (ObjUpvalue*)allocateObject(sizeof(ObjUpvalue), OBJ_UPVALUE);
+    upvalue->location = slot;
+    upvalue->closed = NIL_VAL;
+    upvalue->next = NULL;
+    return upvalue;
 }
 
 static uint32_t hashString(const char* key, int length) {
@@ -93,6 +115,12 @@ void printObject(Value value) {
             break;
         case OBJ_NATIVE:
             printf("<native fn>");
+            break;
+        case OBJ_CLOSURE:
+            printFunction(AS_CLOSURE(value)->function);
+            break;
+        case OBJ_UPVALUE:
+            printf("upvalue");
             break;
     }
 }
