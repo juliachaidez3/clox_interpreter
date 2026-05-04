@@ -495,6 +495,22 @@ static InterpretResult run() {
             case OP_CLASS:
                 push(OBJ_VAL(newClass(READ_STRING())));
                 break;
+
+            case OP_DELETE_PROPERTY: {
+                if (!IS_INSTANCE(peek(0))) {
+                    runtimeError("Only instances have fields.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                ObjInstance* instance = AS_INSTANCE(peek(0));
+                ObjString* name = READ_STRING();
+
+                tableDelete(&instance->fields, name);
+
+                pop();          // remove instance
+                push(NIL_VAL);  // delete returns nil
+                break;
+            }
         }
     }
 }
