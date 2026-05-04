@@ -36,7 +36,9 @@ typedef enum {
     OP_RETURN,
     OP_CLASS,
     OP_GET_PROPERTY,
-    OP_SET_PROPERTY
+    OP_SET_PROPERTY,
+    OP_GET_PROPERTY_DYNAMIC,
+    OP_SET_PROPERTY_DYNAMIC
 } OpCode;
 
 typedef struct {

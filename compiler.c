@@ -323,6 +323,20 @@ static void call(bool canAssign) {
 }
 
 static void dot(bool canAssign) {
+    if (match(TOKEN_LEFT_PAREN)) {
+        expression();
+        consume(TOKEN_RIGHT_PAREN, "Expect ')' after property name expression.");
+
+        if (canAssign && match(TOKEN_EQUAL)) {
+            expression();
+            emitByte(OP_SET_PROPERTY_DYNAMIC);
+        } else {
+            emitByte(OP_GET_PROPERTY_DYNAMIC);
+        }
+
+        return;
+    }
+
     consume(TOKEN_IDENTIFIER, "Expect property name after '.'.");
     uint8_t name = identifierConstant(&parser.previous);
 

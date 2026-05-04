@@ -337,9 +337,11 @@ static InterpretResult run() {
                     break;
                 }
 
-                runtimeError("Undefined property '%s'.", name->chars);
-                return INTERPRET_RUNTIME_ERROR;
+                pop();
+                push(NIL_VAL);
+                break;
             }
+
 
             case OP_SET_PROPERTY: {
                 if (!IS_INSTANCE(peek(1))) {
@@ -495,6 +497,57 @@ static InterpretResult run() {
             case OP_CLASS:
                 push(OBJ_VAL(newClass(READ_STRING())));
                 break;
+
+            case OP_GET_PROPERTY_DYNAMIC: {
+                if (!IS_STRING(peek(0))) {
+                    runtimeError("Dynamic property name must be a string.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                if (!IS_INSTANCE(peek(1))) {
+                    runtimeError("Only instances have properties.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                ObjString* name = AS_STRING(peek(0));
+                ObjInstance* instance = AS_INSTANCE(peek(1));
+
+                Value value;
+                if (tableGet(&instance->fields, name, &value)) {
+                    pop(); // name
+                    pop(); // instance
+                    push(value);
+                    break;
+                }
+
+                pop(); // name
+                pop(); // instance
+                push(NIL_VAL);
+                break;
+            }
+
+            case OP_SET_PROPERTY_DYNAMIC: {
+                if (!IS_STRING(peek(1))) {
+                    runtimeError("Dynamic property name must be a string.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                if (!IS_INSTANCE(peek(2))) {
+                    runtimeError("Only instances have fields.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                ObjString* name = AS_STRING(peek(1));
+                ObjInstance* instance = AS_INSTANCE(peek(2));
+
+                tableSet(&instance->fields, name, peek(0));
+
+                Value value = pop(); // value
+                pop();               // name
+                pop();               // instance
+                push(value);
+                break;
+            }
         }
     }
 }
