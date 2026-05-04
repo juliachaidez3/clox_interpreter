@@ -337,8 +337,9 @@ static InterpretResult run() {
                     break;
                 }
 
-                runtimeError("Undefined property '%s'.", name->chars);
-                return INTERPRET_RUNTIME_ERROR;
+                pop();
+                push(NIL_VAL);
+                break;
             }
 
             case OP_SET_PROPERTY: {
