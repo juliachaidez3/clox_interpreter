@@ -880,8 +880,24 @@ static void synchronize() {
     }
 }
 
+static void deleteStatement() {
+    consume(TOKEN_IDENTIFIER, "Expect object name.");
+    namedVariable(parser.previous, false);
+
+    consume(TOKEN_DOT, "Expect '.' after object.");
+    consume(TOKEN_IDENTIFIER, "Expect property name.");
+
+    uint8_t name = identifierConstant(&parser.previous);
+
+    consume(TOKEN_SEMICOLON, "Expect ';' after delete statement.");
+
+    emitBytes(OP_DELETE_PROPERTY, name);
+}
+
 static void statement() {
-    if (match(TOKEN_PRINT)) {
+    if (match(TOKEN_DELETE)) {
+        deleteStatement();
+    } else if (match(TOKEN_PRINT)) {
         printStatement();
     } else if (match(TOKEN_FOR)) {
         forStatement();
