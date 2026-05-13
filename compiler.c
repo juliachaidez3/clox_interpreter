@@ -327,6 +327,21 @@ static void variable(bool canAssign) {
     namedVariable(parser.previous, canAssign);
 }
 
+static void inner_(bool canAssign) {
+    if (current->type != TYPE_METHOD &&
+        current->type != TYPE_INITIALIZER) {
+        error("Can't use 'inner' outside of a method.");
+        return;
+        }
+
+    namedVariable(syntheticToken("this"), false);
+
+    consume(TOKEN_LEFT_PAREN, "Expect '(' after 'inner'.");
+    uint8_t argCount = argumentList();
+
+    emitBytes(OP_INNER, argCount);
+}
+
 static void this_(bool canAssign) {
     if (currentClass == NULL) {
         error("Can't use 'this' outside of a class.");
@@ -337,28 +352,7 @@ static void this_(bool canAssign) {
 }
 
 static void super_(bool canAssign) {
-    if (currentClass == NULL) {
-        error("Can't use 'super' outside of a class.");
-    } else if (!currentClass->hasSuperclass) {
-        error("Can't use 'super' in a class with no superclass.");
-    }
-
-    consume(TOKEN_DOT, "Expect '.' after 'super'.");
-    consume(TOKEN_IDENTIFIER, "Expect superclass method name.");
-
-    uint8_t name = identifierConstant(&parser.previous);
-
-    namedVariable(syntheticToken("this"), false);
-
-    if (match(TOKEN_LEFT_PAREN)) {
-        uint8_t argCount = argumentList();
-        namedVariable(syntheticToken("super"), false);
-        emitBytes(OP_SUPER_INVOKE, name);
-        emitByte(argCount);
-    } else {
-        namedVariable(syntheticToken("super"), false);
-        emitBytes(OP_GET_SUPER, name);
-    }
+    error("Use 'inner' instead of 'super' in BETA-style inheritance.");
 }
 
 static uint8_t argumentList() {
@@ -492,6 +486,8 @@ static void binary(bool canAssign) {
     }
 }
 
+static void inner_(bool canAssign);
+
 ParseRule rules[] = {
     [TOKEN_LEFT_PAREN]    = {grouping, call,   PREC_CALL},
     [TOKEN_RIGHT_PAREN]   = {NULL,     NULL,   PREC_NONE},
@@ -533,6 +529,7 @@ ParseRule rules[] = {
     [TOKEN_WHILE]         = {NULL,     NULL,   PREC_NONE},
     [TOKEN_ERROR]         = {NULL,     NULL,   PREC_NONE},
     [TOKEN_EOF]           = {NULL,     NULL,   PREC_NONE},
+    [TOKEN_INNER] = {inner_, NULL, PREC_NONE},
 };
 
 static ParseRule* getRule(TokenType type) {
@@ -794,15 +791,12 @@ static void classDeclaration() {
 
     if (match(TOKEN_LESS)) {
         consume(TOKEN_IDENTIFIER, "Expect superclass name.");
-        variable(false);
 
         if (identifiersEqual(&className, &parser.previous)) {
             error("A class can't inherit from itself.");
         }
 
-        beginScope();
-        addLocal(syntheticToken("super"));
-        defineVariable(0);
+        variable(false);
 
         namedVariable(className, false);
         emitByte(OP_INHERIT);
@@ -821,10 +815,6 @@ static void classDeclaration() {
     consume(TOKEN_RIGHT_BRACE, "Expect '}' after class body.");
 
     emitByte(OP_POP);
-
-    if (classCompiler.hasSuperclass) {
-        endScope();
-    }
 
     currentClass = currentClass->enclosing;
 }

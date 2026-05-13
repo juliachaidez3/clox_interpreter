@@ -157,7 +157,57 @@ static void closeUpvalues(Value* last) {
     }
 }
 
-static bool call(ObjClosure* closure, int argCount) {
+static bool findHighestMethod(ObjClass* klass, ObjString* name,
+                              Value* method, ObjClass** owner) {
+    if (klass->superclass != NULL &&
+        findHighestMethod(klass->superclass, name, method, owner)) {
+        return true;
+        }
+
+    if (tableGet(&klass->methods, name, method)) {
+        *owner = klass;
+        return true;
+    }
+
+    return false;
+}
+
+static bool findInnerMethod(ObjClass* currentOwner,
+                            ObjClass* receiverClass,
+                            ObjString* name,
+                            Value* method,
+                            ObjClass** owner) {
+    ObjClass* path[UINT8_COUNT];
+    int count = 0;
+
+    for (ObjClass* klass = receiverClass;
+         klass != NULL && count < UINT8_COUNT;
+         klass = klass->superclass) {
+        path[count++] = klass;
+         }
+
+    int ownerIndex = -1;
+    for (int i = 0; i < count; i++) {
+        if (path[i] == currentOwner) {
+            ownerIndex = i;
+            break;
+        }
+    }
+
+    if (ownerIndex == -1) return false;
+
+    for (int i = ownerIndex - 1; i >= 0; i--) {
+        if (tableGet(&path[i]->methods, name, method)) {
+            *owner = path[i];
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool callWithOwner(ObjClosure* closure, int argCount,
+                          ObjClass* owner, ObjString* name) {
     if (argCount != closure->function->arity) {
         runtimeError("Expected %d arguments but got %d.",
                      closure->function->arity, argCount);
@@ -173,22 +223,67 @@ static bool call(ObjClosure* closure, int argCount) {
     frame->closure = closure;
     frame->ip = closure->function->chunk.code;
     frame->slots = vm.stackTop - argCount - 1;
+    frame->methodOwner = owner;
+    frame->methodName = name;
 
     return true;
 }
 
+static bool inner(int argCount) {
+    CallFrame* frame = &vm.frames[vm.frameCount - 1];
+
+    if (frame->methodOwner == NULL || frame->methodName == NULL) {
+        runtimeError("Can't use 'inner' outside of a method.");
+        return false;
+    }
+
+    Value receiver = frame->slots[0];
+
+    if (!IS_INSTANCE(receiver)) {
+        runtimeError("Only instances have inner methods.");
+        return false;
+    }
+
+    ObjInstance* instance = AS_INSTANCE(receiver);
+
+    Value method;
+    ObjClass* owner;
+
+    if (!findInnerMethod(frame->methodOwner,
+                         instance->klass,
+                         frame->methodName,
+                         &method,
+                         &owner)) {
+        vm.stackTop -= argCount + 1;
+        push(NIL_VAL);
+        return true;
+                         }
+
+    return callWithOwner(AS_CLOSURE(method), argCount,
+                         owner, frame->methodName);
+}
+
+static bool call(ObjClosure* closure, int argCount) {
+    return callWithOwner(closure, argCount, NULL, NULL);
+}
+
 static bool callValue(Value callee, int argCount);
+
+static bool callValue(Value callee, int argCount);
+static bool callWithOwner(ObjClosure* closure, int argCount,
+                          ObjClass* owner, ObjString* name);
 
 static bool invokeFromClass(ObjClass* klass, ObjString* name,
                             int argCount) {
     Value method;
+    ObjClass* owner;
 
-    if (!tableGet(&klass->methods, name, &method)) {
+    if (!findHighestMethod(klass, name, &method, &owner)) {
         runtimeError("Undefined property '%s'.", name->chars);
         return false;
     }
 
-    return call(AS_CLOSURE(method), argCount);
+    return callWithOwner(AS_CLOSURE(method), argCount, owner, name);
 }
 
 static bool invoke(ObjString* name, int argCount) {
@@ -212,13 +307,19 @@ static bool invoke(ObjString* name, int argCount) {
 
 static bool bindMethod(ObjClass* klass, ObjString* name) {
     Value method;
+    ObjClass* owner;
 
-    if (!tableGet(&klass->methods, name, &method)) {
+    if (!findHighestMethod(klass, name, &method, &owner)) {
         runtimeError("Undefined property '%s'.", name->chars);
         return false;
     }
 
-    ObjBoundMethod* bound = newBoundMethod(peek(0), AS_CLOSURE(method));
+    ObjBoundMethod* bound = newBoundMethod(
+        peek(0),
+        AS_CLOSURE(method),
+        owner,
+        name
+    );
 
     pop();
     push(OBJ_VAL(bound));
@@ -232,7 +333,8 @@ static bool callValue(Value callee, int argCount) {
             case OBJ_BOUND_METHOD: {
                 ObjBoundMethod* bound = AS_BOUND_METHOD(callee);
                 vm.stackTop[-argCount - 1] = bound->receiver;
-                return call(bound->method, argCount);
+                return callWithOwner(bound->method, argCount,
+                                     bound->owner, bound->name);
             }
 
             case OBJ_CLASS: {
@@ -240,8 +342,11 @@ static bool callValue(Value callee, int argCount) {
                 vm.stackTop[-argCount - 1] = OBJ_VAL(newInstance(klass));
 
                 Value initializer;
-                if (tableGet(&klass->methods, vm.initString, &initializer)) {
-                    return call(AS_CLOSURE(initializer), argCount);
+                ObjClass* owner;
+
+                if (findHighestMethod(klass, vm.initString, &initializer, &owner)) {
+                    return callWithOwner(AS_CLOSURE(initializer), argCount,
+                                         owner, vm.initString);
                 } else if (argCount != 0) {
                     runtimeError("Expected 0 arguments but got %d.", argCount);
                     return false;
@@ -614,7 +719,8 @@ static InterpretResult run() {
                 }
 
                 ObjClass* subclass = AS_CLASS(peek(0));
-                tableAddAll(&AS_CLASS(superclass)->methods, &subclass->methods);
+                subclass->superclass = AS_CLASS(superclass);
+
                 pop();
                 break;
             }
@@ -625,6 +731,17 @@ static InterpretResult run() {
                 ObjClass* superclass = AS_CLASS(pop());
 
                 if (!invokeFromClass(superclass, method, argCount)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                frame = &vm.frames[vm.frameCount - 1];
+                break;
+            }
+
+            case OP_INNER: {
+                int argCount = READ_BYTE();
+
+                if (!inner(argCount)) {
                     return INTERPRET_RUNTIME_ERROR;
                 }
 
