@@ -10,17 +10,9 @@ typedef enum {
     VAL_BOOL,
     VAL_NIL,
     VAL_NUMBER,
-    VAL_OBJ
+    VAL_OBJ,
+    VAL_SMALL_STRING
 } ValueType;
-
-typedef struct {
-    ValueType type;
-    union {
-        bool boolean;
-        double number;
-        Obj* obj;
-    } as;
-} Value;
 
 #define IS_BOOL(value)    ((value).type == VAL_BOOL)
 #define IS_NIL(value)     ((value).type == VAL_NIL)
@@ -36,6 +28,28 @@ typedef struct {
 #define NUMBER_VAL(value) ((Value){VAL_NUMBER, {.number = value}})
 #define OBJ_VAL(object)   ((Value){VAL_OBJ,    {.obj = (Obj*)object}})
 
+#define SMALL_STRING_MAX 7
+
+#define IS_SMALL_STRING(value) ((value).type == VAL_SMALL_STRING)
+
+#define SMALL_STRING_VAL(text, len) makeSmallStringValue(text, len)
+
+#define AS_SMALL_STRING(value) ((value).as.smallString.chars)
+#define AS_SMALL_STRING_LENGTH(value) ((value).as.smallString.length)
+
+typedef struct {
+    ValueType type;
+    union {
+        bool boolean;
+        double number;
+        Obj* obj;
+        struct {
+            uint8_t length;
+            char chars[SMALL_STRING_MAX + 1];
+        } smallString;
+    } as;
+} Value;
+
 typedef struct {
     int capacity;
     int count;
@@ -48,5 +62,7 @@ void freeValueArray(ValueArray* array);
 
 void printValue(Value value);
 bool valuesEqual(Value a, Value b);
+
+Value makeSmallStringValue(const char* chars, int length);
 
 #endif
