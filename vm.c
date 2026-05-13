@@ -69,6 +69,16 @@ static void defineNative(const char* name, NativeFn function) {
     pop();
 }
 
+static int stringLength(Value value) {
+    if (IS_SMALL_STRING(value)) return AS_SMALL_STRING_LENGTH(value);
+    return AS_STRING(value)->length;
+}
+
+static const char* stringCharsPtr(Value* value) {
+    if (IS_SMALL_STRING(*value)) return AS_SMALL_STRING(*value);
+    return AS_CSTRING(*value);
+}
+
 void initVM() {
     resetStack();
 
@@ -103,14 +113,33 @@ static bool isFalsey(Value value) {
 }
 
 static InterpretResult concatenate() {
-    ObjString* b = AS_STRING(peek(0));
-    ObjString* a = AS_STRING(peek(1));
+    Value* bValue = &vm.stackTop[-1];
+    Value* aValue = &vm.stackTop[-2];
 
-    int length = a->length + b->length;
+    int aLength = stringLength(*aValue);
+    int bLength = stringLength(*bValue);
+    int length = aLength + bLength;
+
+    const char* aChars = stringCharsPtr(aValue);
+    const char* bChars = stringCharsPtr(bValue);
+
+    if (length <= SMALL_STRING_MAX) {
+        char chars[SMALL_STRING_MAX + 1];
+
+        memcpy(chars, aChars, aLength);
+        memcpy(chars + aLength, bChars, bLength);
+        chars[length] = '\0';
+
+        pop();
+        pop();
+        push(makeSmallStringValue(chars, length));
+        return INTERPRET_OK;
+    }
+
     char* chars = ALLOCATE(char, length + 1);
 
-    memcpy(chars, a->chars, a->length);
-    memcpy(chars + a->length, b->chars, b->length);
+    memcpy(chars, aChars, aLength);
+    memcpy(chars + aLength, bChars, bLength);
     chars[length] = '\0';
 
     ObjString* result = takeString(chars, length);
@@ -121,7 +150,6 @@ static InterpretResult concatenate() {
 
     return INTERPRET_OK;
 }
-
 static ObjUpvalue* captureUpvalue(Value* local) {
     ObjUpvalue* prevUpvalue = NULL;
     ObjUpvalue* upvalue = vm.openUpvalues;
@@ -299,6 +327,8 @@ static void defineMethod(ObjString* name) {
         push(valueType(a op b)); \
     } while (false)
 
+#define IS_LOX_STRING(value) (IS_STRING(value) || IS_SMALL_STRING(value))
+
 static InterpretResult run() {
     CallFrame* frame = &vm.frames[vm.frameCount - 1];
 
@@ -453,7 +483,7 @@ static InterpretResult run() {
                 break;
 
             case OP_ADD:
-                if (IS_STRING(peek(0)) && IS_STRING(peek(1))) {
+                if (IS_LOX_STRING(peek(0)) && IS_LOX_STRING(peek(1))) {
                     concatenate();
                 } else if (IS_NUMBER(peek(0)) && IS_NUMBER(peek(1))) {
                     double b = AS_NUMBER(pop());
@@ -463,7 +493,6 @@ static InterpretResult run() {
                     runtimeError("Operands must be two numbers or two strings.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
-
                 break;
 
             case OP_SUBTRACT:

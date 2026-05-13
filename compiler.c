@@ -300,8 +300,14 @@ static void number(bool canAssign) {
 }
 
 static void string(bool canAssign) {
-    emitConstant(OBJ_VAL(copyString(parser.previous.start + 1,
-                                    parser.previous.length - 2)));
+    int length = parser.previous.length - 2;
+    const char* chars = parser.previous.start + 1;
+
+    if (length <= SMALL_STRING_MAX) {
+        emitConstant(SMALL_STRING_VAL(chars, length));
+    } else {
+        emitConstant(OBJ_VAL(copyString(chars, length)));
+    }
 }
 
 static void literal(bool canAssign) {

@@ -1,8 +1,10 @@
 #include <stdio.h>
+#include <string.h>
 
 #include "memory.h"
 #include "object.h"
 #include "value.h"
+
 
 void initValueArray(ValueArray* array) {
     array->capacity = 0;
@@ -48,11 +50,35 @@ bool valuesEqual(Value a, Value b) {
     if (a.type != b.type) return false;
 
     switch (a.type) {
-        case VAL_BOOL:   return AS_BOOL(a) == AS_BOOL(b);
-        case VAL_NIL:    return true;
-        case VAL_NUMBER: return AS_NUMBER(a) == AS_NUMBER(b);
-        case VAL_OBJ:    return AS_OBJ(a) == AS_OBJ(b);
+        case VAL_BOOL:
+            return AS_BOOL(a) == AS_BOOL(b);
+
+        case VAL_NIL:
+            return true;
+
+        case VAL_NUMBER:
+            return AS_NUMBER(a) == AS_NUMBER(b);
+
+        case VAL_OBJ:
+            return AS_OBJ(a) == AS_OBJ(b);
+
+        case VAL_SMALL_STRING:
+            return a.as.smallString.length == b.as.smallString.length &&
+                   memcmp(a.as.smallString.chars,
+                          b.as.smallString.chars,
+                          a.as.smallString.length) == 0;
     }
 
     return false;
+}
+
+Value makeSmallStringValue(const char* chars, int length) {
+    Value value;
+    value.type = VAL_SMALL_STRING;
+    value.as.smallString.length = length;
+
+    memcpy(value.as.smallString.chars, chars, length);
+    value.as.smallString.chars[length] = '\0';
+
+    return value;
 }
