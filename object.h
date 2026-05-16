@@ -78,10 +78,11 @@ typedef struct {
     int upvalueCount;
 } ObjClosure;
 
-typedef struct {
+typedef struct ObjClass {
     Obj obj;
     ObjString* name;
     Table methods;
+    struct ObjClass* superclass;
 } ObjClass;
 
 typedef struct {
@@ -94,9 +95,11 @@ typedef struct {
     Obj obj;
     Value receiver;
     ObjClosure* method;
+    ObjClass* owner;
+    ObjString* name;
 } ObjBoundMethod;
 
-ObjBoundMethod* newBoundMethod(Value receiver, ObjClosure* method);
+ObjBoundMethod* newBoundMethod(Value receiver, ObjClosure* method, ObjClass* owner, ObjString* name);
 ObjClass* newClass(ObjString* name);
 ObjClosure* newClosure(ObjFunction* function);
 ObjFunction* newFunction();

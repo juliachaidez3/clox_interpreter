@@ -62,12 +62,15 @@ static void blackenObject(Obj* object) {
             ObjBoundMethod* bound = (ObjBoundMethod*)object;
             markValue(bound->receiver);
             markObject((Obj*)bound->method);
+            markObject((Obj*)bound->owner);
+            markObject((Obj*)bound->name);
             break;
         }
 
         case OBJ_CLASS: {
             ObjClass* klass = (ObjClass*)object;
             markObject((Obj*)klass->name);
+            markObject((Obj*)klass->superclass);
             markTable(&klass->methods);
             break;
         }
